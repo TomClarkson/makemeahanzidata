@@ -55,22 +55,42 @@ const orientPaths = (paths, approximation_error) => {
   return paths;
 }
 
-// Takes a normal-form SVG path string and converts it to a list of paths.
+// Takes an SVG path string and converts it to a list of paths.
+// Handles the upper- and lower-case forms of the C, L, M, Q, and Z commands.
 const splitPath = (path) => {
   assert(path.length > 0);
   assert(path[0] === 'M', `Path did not start with M: ${path}`);
   assert(path[path.length - 1] === 'Z', `Path did not end with Z: ${path}`);
-  const terms = path.split(' ');
+
+  // Ensure that each command is surrounded by spaces so that we can split on
+  // spaces and get a correct result back. We don't care about efficiency here
+  // (although it'll still end up being linear).
+  const kCommands = 'CLMQZ';
+  for (let type of kCommands) {
+    path = path.split(type).join(` ${type} `);
+    path = path.split(type.toLowerCase()).join(` ${type.toLowerCase()} `);
+  }
+  path = path.split('-').join(' -');
+
+  // After adding in these extra spaces, we might have consecutive spaces or
+  // leading or trailing whitespace, which means we need to discard empty
+  // terms after splitting on space.
+  const terms = path.split(' ').filter((x) => !!x);
+
   const result = [];
   let start = undefined;
   let current = undefined;
-  for (let i = 0; i < terms.length; i++) {
-    const command = terms[i];
+  for (var i = 0; i < terms.length; i++) {
+    const command = terms[i].toUpperCase();
+    const relative = terms[i] !== command;
     assert(command.length > 0, `Path includes empty command: ${path}`);
-    assert('LMQZ'.indexOf(command) >= 0, command);
+    assert(kCommands.indexOf(command) >= 0, command);
     if (command === 'M' || command === 'Z') {
       if (current !== undefined) {
-        assert(Point.equal(current, start), `Path has open contour: ${path}`);
+        // assert(Point.equal(current, start), `Path has open contour: ${path}`);
+        const median = svg.getPolygonApproximation(path);     
+        debugger;   
+
         assert(result[result.length - 1].length > 0,
                `Path has empty contour: ${path}`);
         if (command === 'Z') {
@@ -81,22 +101,23 @@ const splitPath = (path) => {
       result.push([]);
       assert(i < terms.length - 2, `Missing point on path: ${path}`);
       start = [parseFloat(terms[i + 1], 10), parseFloat(terms[i + 2], 10)];
+      if (relative) { assert(current); start = Point.add(current, start); }
       assert(Point.valid(start));
       i += 2;
       current = Point.clone(start);
       continue;
     }
-    let control = undefined;
-    if (command === 'Q') {
+    const next = () => {
       assert(i < terms.length - 2, `Missing point on path: ${path}`);
-      control = [parseFloat(terms[i + 1], 10), parseFloat(terms[i + 2], 10)];
-      assert(Point.valid(control));
+      let x = [parseFloat(terms[i + 1], 10), parseFloat(terms[i + 2], 10)];
+      if (relative) { assert(current); x = Point.add(x, current); }
+      assert(Point.valid(x), JSON.stringify(x));
       i += 2;
+      return x;
     }
-    assert(i < terms.length - 2, `Missing point on path: ${path}`);
-    const end = [parseFloat(terms[i + 1], 10), parseFloat(terms[i + 2], 10)];
-    assert(Point.valid(end));
-    i += 2;
+    let control = (command === 'C' || command === 'Q') ? next() : undefined;
+    const control2 = command === 'C' ? next() : undefined;
+    const end = next();
     if (Point.equal(current, end)) {
       continue;
     }
@@ -107,6 +128,7 @@ const splitPath = (path) => {
     result[result.length - 1].push({
       start: Point.clone(current),
       control: control,
+      control2: control2,
       end: end,
     });
     current = Point.clone(end);
@@ -179,9 +201,24 @@ svg.getPolygonApproximation = (path, approximation_error) => {
   const result = [];
   approximation_error = approximation_error || 64;
   for (let x of path) {
-    const control = x.control || Point.midpoint(x.start, x.end);
     const distance = Math.sqrt(Point.distance2(x.start, x.end));
     const num_points = Math.floor(distance/approximation_error);
+
+    // Handle the cubic case first.
+    if (!!x.control2) {
+      const [a, b, c, d] = [x.start, x.control, x.control2, x.end];
+      for (let i = 0; i < num_points; i++) {
+        const t = (i + 1)/(num_points + 1);
+        const s = 1 - t;
+        result.push([s*s*s*a[0] + 3*s*s*t*b[0] + 3*s*t*t*c[0] + t*t*t*d[0],
+                     s*s*s*a[1] + 3*s*s*t*b[1] + 3*s*t*t*c[1] + t*t*t*d[1]]);
+      }
+      result.push(x.end);
+      continue;
+    }
+
+    // Handle the quadratic and linear cases in one go.
+    const control = x.control || Point.midpoint(x.start, x.end);
     for (let i = 0; i < num_points; i++) {
       const t = (i + 1)/(num_points + 1);
       const s = 1 - t;

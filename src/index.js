@@ -22,9 +22,11 @@ import { median_util } from './makemeahanzi/median_util';
 // console.table(result);
 // console.table(character.medians);
 
-const result = median_util.findStrokeMedian(
-  "M11 54.25c3.19 0.62 6.25 0.75 9.73 0.5c20.64-1.5 50.39-5.12 68.58-5.24c3.6-0.02 5.77 0.24 7.57 0.49 Z"
-);
+// const result = median_util.findStrokeMedian(
+//   "M11 54.25c3.19 0.62 6.25 0.75 9.73 0.5c20.64-1.5 50.39-5.12 68.58-5.24c3.6-0.02 5.77 0.24 7.57 0.49 Z"
+// );
+const path = "M11 54.25c3.19 0.62 6.25 0.75 9.73 0.5c20.64-1.5 50.39-5.12 68.58-5.24c3.6-0.02 5.77 0.24 7.57 0.49 Z";
+const result = median_util.findStrokeMedian(path);
 console.log(result);
 
 // import React from 'react';
